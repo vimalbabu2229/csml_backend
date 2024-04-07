@@ -60,28 +60,24 @@ class Forecast(APIView):
             label_encoder = pickle.load(file)
 
         return (model, label_encoder)
-
     def post(self, request):
-        file_upload_serializer = FileUploadSerializer(data=request.data)
-        if file_upload_serializer.is_valid():
-            audio = request.FILES['audio']
-            file_buffer = BytesIO(audio.read())
+            print("********************************************")
+            print("Request = ", type(request.body))
+            print("********************************************")
+            
+            audio_data = request.body
+            file_buffer = BytesIO(audio_data)
             samples, sr = librosa.load(file_buffer)
 
-            # loading model 
+            # Loading model
             model, label_encoder = self.load_model()
+
             input_feature_data = []
-            for i in range(0, len(samples), (sr*5)):
-                input_feature_data.append(self.extract_features(samples[i:(i+(sr*5))], sr))
+            for i in range(0, len(samples), (sr * 5)):
+                input_feature_data.append(self.extract_features(samples[i:(i + (sr * 5))], sr))
 
             preds = model.predict(input_feature_data)
             aggregate_class_index = round(np.mean(preds))
             forecast = label_encoder.inverse_transform([aggregate_class_index])[0]
-            # file_path = os.path.join(settings.MEDIA_ROOT, audio.name)
-            # with open(file_path, 'wb+') as file:
-                # for chunk in audio.chunks():
-                    # file.write(chunk)
 
             return Response({'forecast': forecast}, status=status.HTTP_201_CREATED)
-        else:
-            return Response(file_upload_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
