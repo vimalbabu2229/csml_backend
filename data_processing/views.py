@@ -10,11 +10,13 @@ from io import BytesIO
 import librosa
 import pickle
 from datetime import datetime
+from keras.models import load_model
+import joblib
 
 from django.conf import settings
 
 from .serializers import DeviceManagerSerializer
-from .models import DeviceManager, ForecastModel
+from .models import DeviceManager, ForecastModel, EmergencyData
 
 class DeviceManagerView(APIView):
     def get(self, request, pkID=-1):
@@ -119,3 +121,94 @@ class Forecast(APIView):
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+class EmergencyVehicle(APIView):
+    file_parser_classes = [FileUploadParser]
+    model = load_model('resources/model_em.h5')
+    scaler = joblib.load('resources/scaler.joblib')
+
+    def mfcc(self, y,sr=4000):
+        return librosa.feature.mfcc(y=y,sr=sr, n_mfcc=12)
+
+
+    def extract_mfccs(self, y):
+        mfccs_list = []
+        ran = len(y)//480
+        for i in range(ran-10):
+            y_clip = y[480*i:480*(i+1)]
+            mfccs_clip = self.mfcc(y_clip)
+            mfccs_clip = np.array(mfccs_clip)
+            mfccs_clip = mfccs_clip.flatten()
+            mfccs_list.append(mfccs_clip)
+        return mfccs_list
+
+    def predict_op(self, y, scaler):
+        mfccs_list = self.extract_mfccs(y)
+        scaler.transform(mfccs_list)
+        count = 0
+        N = 6
+        th = 0.5
+        
+        prob_list = []
+        class_list = []
+        for i in range(N):
+            p = self.model.predict(mfccs_list[i].reshape(1,12), batch_size=None, verbose=0)
+            p = p.flatten()
+            prob_list.append(p)
+        prob = np.mean(prob_list)
+        #print(prob)
+        if prob > th:
+            #print("Em")
+            class_list.append(1)
+        else:
+            #print("Non-em")
+            class_list.append(0)
+        
+        for i in range(N,len(mfccs_list)):
+            prob_list.pop(0)
+            p = self.model.predict(mfccs_list[i].reshape(1,12), batch_size=None, verbose=0)
+            p = p.flatten()
+            prob_list.append(p)
+            prob = np.mean(prob_list)
+            #print(prob)
+            if prob > th:
+                #print("Em")
+                class_list.append(1)
+            else:
+                #print("Non-em")
+                class_list.append(0)
+        if np.mean(class_list) > 0.5:
+            return 1
+        else:
+            return 0
+
+    def post(self, request):
+        print("****************")
+        print("Ambulance Request = ", type(request.body))
+        print("****************")
+        
+        audio_data = request.body
+        file_buffer = BytesIO(audio_data)
+        samples, sr = librosa.load(file_buffer ,sr=4000)
+
+        emergency = self.predict_op(samples, self.scaler)
+
+        if emergency == 1:
+            EmergencyData.objects.create(
+                device_id=request.headers['device'],  
+            )
+
+        return Response({'emergency': emergency}, status=status.HTTP_201_CREATED)
+
+
+class EmergencyDataAPI(APIView):
+    def get(self, request, *args, **kwargs):
+        # Retrieve all emergency data
+        data = list(EmergencyData.objects.values())
+        print(data)
+        
+        # Clear the table after sending the data
+        EmergencyData.objects.all().delete()
+        
+        # Send response
+        return Response(data)

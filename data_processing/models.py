@@ -1,4 +1,5 @@
 from django.db import models
+import time
 
 class DeviceManager(models.Model):
     # id will be automatically created by django
@@ -18,3 +19,15 @@ class ForecastModel(models.Model):
     forecast = models.IntegerField(choices=CHOICE)
     noise_level = models.IntegerField()
     device = models.ForeignKey(DeviceManager, on_delete=models.CASCADE)
+
+class EmergencyData(models.Model):
+    device_id = models.IntegerField()
+    timestamp = models.IntegerField(null=True)
+
+    def save(self, *args, **kwargs):
+        if not self.timestamp:
+            self.timestamp = int(time.time() * 1000)
+        super().save(*args, **kwargs)
+
+    def _str_(self):
+        return f"Emergency Request from {self.device_id} at {self.timestamp}"
