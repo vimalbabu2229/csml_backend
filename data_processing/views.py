@@ -3,16 +3,18 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import FileUploadParser
 import os
+from .serializers import ForecastSerializer
 
 import numpy as np 
 from io import BytesIO
 import librosa
 import pickle
+from datetime import datetime
 
 from django.conf import settings
 
-from .serializers import DeviceManagerSerializer, FileUploadSerializer
-from .models import DeviceManager
+from .serializers import DeviceManagerSerializer
+from .models import DeviceManager, ForecastModel
 
 class DeviceManagerView(APIView):
     def get(self, request, pkID=-1):
@@ -37,7 +39,8 @@ class DeviceManagerView(APIView):
 
 class Forecast(APIView):
     file_parser_classes = [FileUploadParser]
-
+    
+    # FEATURE EXTRATION
     def extract_features(self, y, sr):
         mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
         spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
@@ -52,6 +55,23 @@ class Forecast(APIView):
                               np.mean(rmse)))
         return features
     
+    # CALCULATE NOISE LEVEL
+    def calculate_dB(self, samples):
+        # Compute STFT
+        D = librosa.stft(samples)
+
+        # Calculate magnitude
+        magnitude = np.abs(D)
+
+        # Convert magnitude to Sound Pressure Level (SPL)
+        reference_pressure = 20e-6  # Reference sound pressure level in pascals (20 µPa)
+        magnitude_spl = 20 * np.log10(magnitude / reference_pressure)
+
+        # Calculate average SPL
+        average_spl = np.mean(magnitude_spl)
+        return round(average_spl)
+
+    # LOAD MODELS 
     def load_model(self):
         with open('resources/model.pkl', 'rb') as file:
             model = pickle.load(file)
@@ -60,11 +80,15 @@ class Forecast(APIView):
             label_encoder = pickle.load(file)
 
         return (model, label_encoder)
+    
+    #GET 
+    def get(self, request):
+        data = ForecastModel.objects.all()
+        response = ForecastSerializer(data, many=True)
+        return Response(response.data, status=status.HTTP_200_OK)
+    # POST 
     def post(self, request):
-            print("********************************************")
-            print("Request = ", type(request.body))
-            print("********************************************")
-            
+            device_id = request.headers.get('device')
             audio_data = request.body
             file_buffer = BytesIO(audio_data)
             samples, sr = librosa.load(file_buffer)
@@ -77,7 +101,21 @@ class Forecast(APIView):
                 input_feature_data.append(self.extract_features(samples[i:(i + (sr * 5))], sr))
 
             preds = model.predict(input_feature_data)
-            aggregate_class_index = round(np.mean(preds))
-            forecast = label_encoder.inverse_transform([aggregate_class_index])[0]
+            forecast = round(np.mean(preds))
+            # forecast = label_encoder.inverse_transform([aggregate_class_index])[0]
+            timestamp =  int(datetime.now().timestamp() * 1000)
+            noise_level = self.calculate_dB(samples)
 
-            return Response({'forecast': forecast}, status=status.HTTP_201_CREATED)
+            data_to_db = {
+                'forecast': forecast, 
+                'timestamp': timestamp, 
+                'noise_level' : noise_level,
+                'device' : device_id
+                }
+            serializer = ForecastSerializer(data=data_to_db)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
