@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import FileUploadParser
 import os
-from .serializers import ForecastSerializer
+from .serializers import ForecastSerializer, ForecastStatsSerializer
+from django.db.models import Avg, Max, Min
 
 import numpy as np 
 from io import BytesIO
@@ -13,11 +14,12 @@ import pickle
 from datetime import datetime
 from keras.models import load_model
 import joblib
+import time
 
-from django.conf import settings
 
 from .serializers import DeviceManagerSerializer
 from .models import DeviceManager, ForecastModel, EmergencyData
+# from .timeseries import write_records_to_timestream
 
 class DeviceManagerView(APIView):
     def get(self, request, pkID=-1):
@@ -106,7 +108,24 @@ class Forecast(APIView):
     
     #GET 
     def get(self, request):
-        data = ForecastModel.objects.all()
+        device_id = request.query_params.get('device', None)
+        ago = request.query_params.get('ago', None)
+
+        if device_id is not None and ago is not None:
+            #Convert time_in_hours to seconds (1 hour = 3600 seconds)
+            time_in_seconds = int(ago) * 3600 * 1000
+
+            # Get the current time
+            current_time = int(time.time())
+
+            # Calculate the lower bound timestamp
+            lower_bound_timestamp = current_time - time_in_seconds
+
+            # Filter data based on device_id and timestamp
+            data = ForecastModel.objects.filter(device_id=device_id, timestamp__gte=lower_bound_timestamp)
+        else:
+            data = ForecastModel.objects.all()
+            
         response = ForecastSerializer(data, many=True)
         return Response(response.data, status=status.HTTP_200_OK)
     # POST 
@@ -139,6 +158,7 @@ class Forecast(APIView):
             noise_level = self.calculate_dB(samples)
             if device_id == "11":
                 noise_level += 75 # Adding reference as 94 dB 
+
             data_to_db = {
                 'forecast': forecast, 
                 'timestamp': timestamp, 
@@ -247,5 +267,20 @@ class EmergencyDataAPI(APIView):
 # GENERATE REPORT 
 class GenerateReport(APIView):
     def get(self, request):
-        params = request.query_params
-        return Response({"params":params}, status=status.HTTP_200_OK)
+        time_from = request.query_params.get('from')
+        time_to = request.query_params.get('to')
+        data = ForecastModel.objects.filter(timestamp__gte=time_from, timestamp__lte=time_to).values('device')
+        noise_levels = data.values_list('noise_level',flat=True)
+        grouped_data = (
+                data
+                .values('device')
+                .annotate(
+                 average_forecast=Avg('forecast'),
+                 min_noise_level=Min('noise_level'),
+                max_noise_level=Max('noise_level'),
+                average_noise_level=Avg('noise_level')
+        )
+        .order_by('device'))
+        stat_serializer = ForecastStatsSerializer(grouped_data, many=True)
+       
+        return Response({"device_stat":stat_serializer.data, "noise_levels":noise_levels}, status=status.HTTP_200_OK)

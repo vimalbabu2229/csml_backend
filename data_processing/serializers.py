@@ -13,3 +13,10 @@ class ForecastSerializer(serializers.ModelSerializer):
     class Meta:
         model = ForecastModel
         fields = '__all__'
+
+class ForecastStatsSerializer(serializers.Serializer):
+    device = serializers.IntegerField()
+    average_forecast = serializers.IntegerField()
+    min_noise_level = serializers.IntegerField()
+    max_noise_level = serializers.IntegerField()
+    average_noise_level = serializers.IntegerField()
