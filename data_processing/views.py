@@ -12,6 +12,7 @@ import pickle
 from datetime import datetime
 from keras.models import load_model
 import joblib
+import time
 
 from django.conf import settings
 
@@ -85,7 +86,24 @@ class Forecast(APIView):
     
     #GET 
     def get(self, request):
-        data = ForecastModel.objects.all()
+        device_id = request.query_params.get('device', None)
+        ago = request.query_params.get('ago', None)
+
+        if device_id is not None and ago is not None:
+            #Convert time_in_hours to seconds (1 hour = 3600 seconds)
+            time_in_seconds = int(ago) * 3600 * 1000
+
+            # Get the current time
+            current_time = int(time.time())
+
+            # Calculate the lower bound timestamp
+            lower_bound_timestamp = current_time - time_in_seconds
+
+            # Filter data based on device_id and timestamp
+            data = ForecastModel.objects.filter(device_id=device_id, timestamp__gte=lower_bound_timestamp)
+        else:
+            data = ForecastModel.objects.all()
+            
         response = ForecastSerializer(data, many=True)
         return Response(response.data, status=status.HTTP_200_OK)
     # POST 
