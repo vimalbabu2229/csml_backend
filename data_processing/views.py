@@ -138,7 +138,7 @@ class Forecast(APIView):
             timestamp =  int(datetime.now().timestamp() * 1000)
             noise_level = self.calculate_dB(samples)
             if device_id == "11":
-                noise_level += 94 # Adding reference as 94 dB 
+                noise_level += 75 # Adding reference as 94 dB 
             data_to_db = {
                 'forecast': forecast, 
                 'timestamp': timestamp, 
