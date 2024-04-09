@@ -138,3 +138,4 @@ GitHub.sublime-settings
 
 
 core/data_processing/__pycache__
+csml_backend/db.sqlite3

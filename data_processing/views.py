@@ -137,7 +137,7 @@ class Forecast(APIView):
             # forecast = label_encoder.inverse_transform([aggregate_class_index])[0]
             timestamp =  int(datetime.now().timestamp() * 1000)
             noise_level = self.calculate_dB(samples)
-            if device_id == "1":
+            if device_id == "11":
                 noise_level += 94 # Adding reference as 94 dB 
             data_to_db = {
                 'forecast': forecast, 
