@@ -1,4 +1,5 @@
 from rest_framework.views import APIView
+from rest_framework.decorators import action
 from rest_framework.response import Response    
 from rest_framework import status
 from rest_framework.parsers import FileUploadParser
@@ -83,6 +84,26 @@ class Forecast(APIView):
 
         return (model, label_encoder)
     
+    #UPDATE DEVICE STATUS
+    def patch(self, request):
+        check_timestamp = int(datetime.now().timestamp() * 1000) - 60000 # check for data before 2 min 
+        # check_timestamp = 1712598623220
+        all_devices = set(DeviceManager.objects.values_list('id',flat=True))
+        active_devices = set(ForecastModel.objects.values_list('device', flat=True).filter(timestamp__gte = check_timestamp))
+        inactive_devices = all_devices - active_devices
+        for device in inactive_devices:
+            instance = DeviceManager.objects.get(pk=device)
+            serializer = DeviceManagerSerializer(instance, data={"status": False}, partial=True)
+            if serializer.is_valid():  # Check if the serializer is valid
+                serializer.save()
+            else:
+                print(serializer.errors)
+        # reduce devices with active devices and make them status false 
+        # status true can be handled in post
+        # CHECK CALIBRATION  
+        # GENERATE FORM
+        return Response({"devices": all_devices, "active_devices": active_devices, "inactive_devices" : inactive_devices}, status=status.HTTP_200_OK)
+    
     #GET 
     def get(self, request):
         data = ForecastModel.objects.all()
@@ -91,6 +112,15 @@ class Forecast(APIView):
     # POST 
     def post(self, request):
             device_id = request.headers.get('device')
+            # Updating the Status of device
+            device = DeviceManager.objects.get(pk=device_id)
+            if device.status == False:
+                status_serializer = DeviceManagerSerializer(device, data={"status":True}, partial=True)
+                if status_serializer.is_valid():  # Check if the serializer is valid
+                    status_serializer.save()
+                else:
+                    print(status_serializer.errors)
+
             audio_data = request.body
             file_buffer = BytesIO(audio_data)
             samples, sr = librosa.load(file_buffer)
@@ -107,7 +137,8 @@ class Forecast(APIView):
             # forecast = label_encoder.inverse_transform([aggregate_class_index])[0]
             timestamp =  int(datetime.now().timestamp() * 1000)
             noise_level = self.calculate_dB(samples)
-
+            if device_id == "1":
+                noise_level += 94 # Adding reference as 94 dB 
             data_to_db = {
                 'forecast': forecast, 
                 'timestamp': timestamp, 
@@ -212,3 +243,9 @@ class EmergencyDataAPI(APIView):
         
         # Send response
         return Response(data)
+    
+# GENERATE REPORT 
+class GenerateReport(APIView):
+    def get(self, request):
+        params = request.query_params
+        return Response({"params":params}, status=status.HTTP_200_OK)

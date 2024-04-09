@@ -7,4 +7,6 @@ urlpatterns = [
     path("forecast", Forecast.as_view()),
     path("view_emergency", EmergencyDataAPI.as_view()), 
     path("emergency", EmergencyVehicle.as_view()),
+    path("generate_report", GenerateReport.as_view()),
+    path("status_update", Forecast.as_view()),
 ]
