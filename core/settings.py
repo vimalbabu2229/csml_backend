@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-=4+&0t^0t$z$4mbf_6zktt4yskvhe2rsrj-gp2-xh_)3w4*k5#
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    "57.181.26.100",
+    "54.199.178.140",
     "joint-dashing-kiwi.ngrok-free.app",
     "127.0.0.1", 
     "localhost"

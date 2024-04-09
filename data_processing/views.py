@@ -17,6 +17,7 @@ from django.conf import settings
 
 from .serializers import DeviceManagerSerializer
 from .models import DeviceManager, ForecastModel, EmergencyData
+from .timestream import write_records_to_timestream
 
 class DeviceManagerView(APIView):
     def get(self, request, pkID=-1):
@@ -107,6 +108,10 @@ class Forecast(APIView):
             # forecast = label_encoder.inverse_transform([aggregate_class_index])[0]
             timestamp =  int(datetime.now().timestamp() * 1000)
             noise_level = self.calculate_dB(samples)
+
+            if device_id == 11:
+                write_records_to_timestream(11, timestamp, noise_level)
+                print("DEVICE TIMESTREAM STORED")
 
             data_to_db = {
                 'forecast': forecast, 
@@ -205,7 +210,6 @@ class EmergencyDataAPI(APIView):
     def get(self, request, *args, **kwargs):
         # Retrieve all emergency data
         data = list(EmergencyData.objects.values())
-        print(data)
         
         # Clear the table after sending the data
         EmergencyData.objects.all().delete()
